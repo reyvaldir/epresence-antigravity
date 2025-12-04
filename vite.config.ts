@@ -31,6 +31,9 @@ export default defineConfig({
         enabled: true,
         type: 'module',
       },
+      workbox: {
+        maximumFileSizeToCacheInBytes: 4000000
+      }
     })
   ],
 });
