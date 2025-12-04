@@ -13,7 +13,7 @@ export default function EmployeeSchedulePage() {
   
   // Helper to get dates for the current week
   const getWeekDates = () => {
-    const dates = [];
+    const dates: Date[] = [];
     const today = new Date();
     const currentDay = today.getDay(); // 0-6
     const diff = today.getDate() - currentDay; // Adjust when day is Sunday
