@@ -1,5 +1,5 @@
 import { mutation } from "./_generated/server";
-import { v } from "convex/values";
+import { v, ConvexError } from "convex/values";
 
 export const login = mutation({
     args: { email: v.string(), password: v.string() },
@@ -15,7 +15,7 @@ export const login = mutation({
 
         // Check if user is approved (treat undefined as approved for existing users)
         if (user.isApproved === false) {
-            throw new Error("Your account is pending admin approval. Please wait for approval before logging in.");
+            throw new ConvexError("Your account is pending admin approval. Please wait for approval before logging in.");
         }
 
         // In production, verify password hash
@@ -46,7 +46,7 @@ export const createUser = mutation({
             .first();
 
         if (existing) {
-            throw new Error("User with this email already exists");
+            throw new ConvexError("User with this email already exists");
         }
 
         // In production, hash the password
