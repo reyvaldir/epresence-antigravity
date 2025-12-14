@@ -1,15 +1,21 @@
-import { useQuery } from 'convex/react';
-import { api } from '../../convex/_generated/api';
+import { useQuery } from '@apollo/client/react';
 import { useNavigate } from 'react-router-dom';
-import { Users, MapPin, FileText, BarChart3, Clock, Calendar } from 'lucide-react';
+import { Users, Clock, BarChart3, MapPin, Calendar, FileText } from 'lucide-react';
+import { GET_ALL_USERS, GET_ATTENDANCE_HISTORY, GET_ALL_ABSENCE_REQUESTS } from '../graphql/operations';
 
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
-  
-  const allUsers = useQuery(api.admin.getAllUsers);
-  const pendingRequests = useQuery(api.absence.getAllPendingRequests);
-  const pendingUsers = useQuery(api.admin.getPendingUsers);
-  const attendanceRecords = useQuery(api.admin.getAttendanceReport, {});
+
+  const { data: userData } = useQuery<any>(GET_ALL_USERS);
+  const { data: attendanceData } = useQuery<any>(GET_ATTENDANCE_HISTORY);
+  const { data: absenceData } = useQuery<any>(GET_ALL_ABSENCE_REQUESTS);
+
+  const allUsers = userData?.users || [];
+  const attendanceRecords = attendanceData?.attendanceHistory || [];
+  const allAbsenceRequests = absenceData?.allAbsenceRequests || [];
+
+  const pendingUsers = allUsers.filter((u: any) => !u.isApproved);
+  const pendingRequests = allAbsenceRequests.filter((r: any) => r.status === 'pending');
 
   const stats = [
     {
@@ -28,9 +34,9 @@ export default function AdminDashboardPage() {
     },
     {
       label: 'Today Check-ins',
-      value: attendanceRecords?.filter(r => {
+      value: attendanceRecords?.filter((r: any) => {
         const today = new Date().setHours(0, 0, 0, 0);
-        return new Date(r.timestamp).setHours(0, 0, 0, 0) === today;
+        return new Date(Number(r.timestamp)).setHours(0, 0, 0, 0) === today;
       }).length || 0,
       icon: BarChart3,
       color: 'bg-green-500',
@@ -100,23 +106,26 @@ export default function AdminDashboardPage() {
             <p className="text-gray-500 text-center py-8">No attendance records yet</p>
           ) : (
             <div className="space-y-3">
-              {attendanceRecords.slice(0, 5).map((record) => (
-                <div key={record._id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                      <Users className="w-5 h-5 text-blue-600" />
+              {attendanceRecords.slice(0, 5).map((record: any) => {
+                 const user = allUsers.find((u: any) => u.id === record.userId);
+                 return (
+                  <div key={record.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                        <Users className="w-5 h-5 text-blue-600" />
+                      </div>
+                      <div>
+                        <p className="font-medium">{user?.name || 'Unknown User'}</p>
+                        <p className="text-sm text-gray-500">{user?.email || 'No email'}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-medium">{record.userName}</p>
-                      <p className="text-sm text-gray-500">{record.userEmail}</p>
+                    <div className="text-right">
+                      <p className="text-sm font-medium capitalize">{record.type?.replace('_', ' ')}</p>
+                      <p className="text-xs text-gray-500">{new Date(Number(record.timestamp)).toLocaleString()}</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium capitalize">{record.type.replace('_', ' ')}</p>
-                    <p className="text-xs text-gray-500">{new Date(record.timestamp).toLocaleString()}</p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

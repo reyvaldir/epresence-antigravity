@@ -4,19 +4,34 @@ import {
   LayoutDashboard, Users, BarChart3, Clock, LogOut 
 } from 'lucide-react';
 import clsx from 'clsx';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useAuth, useClerk } from '@clerk/clerk-react';
+import { useQuery } from '@apollo/client/react';
+import { GET_ME } from '../graphql/operations';
 
 export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { isSignedIn, isLoaded: isAuthLoaded } = useAuth();
+  const { signOut } = useClerk();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
-  // Get user role from localStorage
-  const storedUser = localStorage.getItem('user');
-  const user = storedUser ? JSON.parse(storedUser) : null;
+  // Fetch user data from our backend
+  const { data, loading: isUserLoading } = useQuery<any>(GET_ME, {
+    skip: !isSignedIn,
+  });
+
+  const user = data?.me;
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
 
   const isActive = (path: string) => location.pathname === path;
+
+  // Protect routes
+  useEffect(() => {
+    if (isAuthLoaded && !isSignedIn && location.pathname !== '/login') {
+      navigate('/login');
+    }
+  }, [isAuthLoaded, isSignedIn, location.pathname, navigate]);
 
   const employeeNavItems = [
     { icon: Home, label: 'Home', path: '/dashboard' },
@@ -38,8 +53,8 @@ export default function Layout() {
 
   const navItems = isAdmin ? adminNavItems : employeeNavItems;
 
-  const handleLogout = () => {
-    localStorage.removeItem('user');
+  const handleLogout = async () => {
+    await signOut();
     navigate('/login');
   };
 
@@ -48,13 +63,21 @@ export default function Layout() {
     return <Outlet />;
   }
 
+  if (!isAuthLoaded || (isSignedIn && isUserLoading)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <main className={clsx(
         "flex-1 pb-20 transition-all duration-300",
         isSidebarCollapsed ? "md:ml-20" : "md:ml-64"
       )}>
-        <Outlet />
+        <Outlet context={{ user }} />
       </main>
 
       {/* Bottom Navigation for Mobile */}

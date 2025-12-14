@@ -1,16 +1,19 @@
-import { useState } from 'react';
-import { useMutation, useQuery } from 'convex/react';
-import { api } from '../../convex/_generated/api';
-import { MapPin, Plus, Trash2, Navigation, Edit2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { useQuery, useMutation } from '@apollo/client/react';
+import { MapPin, Plus, Navigation, Edit2, Trash2 } from 'lucide-react';
+import { GET_OFFICE_LOCATIONS, CREATE_OFFICE_LOCATION, UPDATE_OFFICE_LOCATION, DELETE_OFFICE_LOCATION } from '../graphql/operations';
 
 export default function AdminLocationsPage() {
-  const locations = useQuery(api.admin.getAllOfficeLocations);
-  const createLocation = useMutation(api.admin.createOfficeLocation);
-  const updateLocation = useMutation(api.admin.updateOfficeLocation);
-  const deleteLocation = useMutation(api.admin.deleteOfficeLocation);
+  const { data: locationData, refetch } = useQuery<any>(GET_OFFICE_LOCATIONS);
+  const [createLocation] = useMutation(CREATE_OFFICE_LOCATION);
+  const [updateLocation] = useMutation(UPDATE_OFFICE_LOCATION);
+  const [deleteLocation] = useMutation(DELETE_OFFICE_LOCATION);
+
+  const locations = locationData?.officeLocations || [];
 
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  
   const [formData, setFormData] = useState({
     name: '',
     coordinates: '', // Single field: "lat, lng"
@@ -37,14 +40,17 @@ export default function AdminLocationsPage() {
 
     try {
       await createLocation({
-        name: formData.name,
-        latitude,
-        longitude,
-        radius: parseFloat(formData.radius),
+        variables: {
+          name: formData.name,
+          latitude,
+          longitude,
+          radius: parseFloat(formData.radius),
+        }
       });
       setFormData({ name: '', coordinates: '', radius: '100' });
       setIsAdding(false);
       alert('Office location added successfully!');
+      refetch();
     } catch (err) {
       console.error(err);
       alert('Failed to add location');
@@ -52,7 +58,7 @@ export default function AdminLocationsPage() {
   };
 
   const handleEdit = (location: any) => {
-    setEditingId(location._id);
+    setEditingId(location.id);
     setFormData({
       name: location.name,
       coordinates: `${location.latitude}, ${location.longitude}`,
@@ -82,15 +88,18 @@ export default function AdminLocationsPage() {
 
     try {
       await updateLocation({
-        locationId: editingId as any,
-        name: formData.name,
-        latitude,
-        longitude,
-        radius: parseFloat(formData.radius),
+        variables: {
+          id: editingId,
+          name: formData.name,
+          latitude,
+          longitude,
+          radius: parseFloat(formData.radius),
+        }
       });
       setFormData({ name: '', coordinates: '', radius: '100' });
       setEditingId(null);
       alert('Office location updated successfully!');
+      refetch();
     } catch (err) {
       console.error(err);
       alert('Failed to update location');
@@ -100,8 +109,9 @@ export default function AdminLocationsPage() {
   const handleDelete = async (locationId: string, name: string) => {
     if (!confirm(`Delete office location "${name}"?`)) return;
     try {
-      await deleteLocation({ locationId: locationId as any });
+      await deleteLocation({ variables: { id: locationId } });
       alert('Location deleted');
+      refetch();
     } catch (err) {
       console.error(err);
       alert('Failed to delete');
@@ -143,7 +153,11 @@ export default function AdminLocationsPage() {
               <p className="text-gray-500 mt-1">Manage geofencing for attendance check-ins</p>
             </div>
             <button
-              onClick={() => setIsAdding(!isAdding)}
+              onClick={() => {
+                 setIsAdding(!isAdding);
+                 setEditingId(null);
+                 setFormData({ name: '', coordinates: '', radius: '100' });
+              }}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700 transition-colors flex items-center gap-2"
             >
               <Plus className="w-5 h-5" />
@@ -245,8 +259,8 @@ export default function AdminLocationsPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {locations.map((location) => (
-                <div key={location._id} className="border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow">
+              {locations.map((location: any) => (
+                <div key={location.id} className="border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
@@ -265,7 +279,7 @@ export default function AdminLocationsPage() {
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleDelete(location._id, location.name)}
+                        onClick={() => handleDelete(location.id, location.name)}
                         className="text-red-600 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-colors"
                       >
                         <Trash2 className="w-4 h-4" />

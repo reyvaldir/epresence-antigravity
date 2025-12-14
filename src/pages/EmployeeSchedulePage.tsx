@@ -1,16 +1,21 @@
-import { useQuery } from 'convex/react';
-import { api } from '../../convex/_generated/api';
+import { useQuery } from '@apollo/client/react';
+import { GET_MY_SCHEDULE } from '../graphql/operations';
 import { Calendar, Clock, AlertCircle } from 'lucide-react';
+import { useOutletContext } from 'react-router-dom';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export default function EmployeeSchedulePage() {
-  const storedUser = localStorage.getItem('user');
-  const user = storedUser ? JSON.parse(storedUser) : null;
-  const userId = user?._id;
+  const { user } = useOutletContext<{ user: any }>();
+  const userId = user?.id;
 
-  const schedule = useQuery((api as any).schedules.getSchedule, userId ? { userId } : "skip");
+  const { data: scheduleData } = useQuery<any>(GET_MY_SCHEDULE, {
+    variables: { userId },
+    skip: !userId
+  });
   
+  const schedules = scheduleData?.mySchedule || [];
+
   // Helper to get dates for the current week
   const getWeekDates = () => {
     const dates: Date[] = [];
@@ -18,8 +23,13 @@ export default function EmployeeSchedulePage() {
     const currentDay = today.getDay(); // 0-6
     const diff = today.getDate() - currentDay; // Adjust when day is Sunday
     
+    // Create new date to avoid mutating today
+    const sunday = new Date(today);
+    sunday.setDate(diff);
+
     for (let i = 0; i < 7; i++) {
-      const date = new Date(today.setDate(diff + i));
+      const date = new Date(sunday);
+      date.setDate(sunday.getDate() + i);
       dates.push(date);
     }
     return dates;
@@ -41,14 +51,19 @@ export default function EmployeeSchedulePage() {
         <div className="space-y-3">
           {weekDates.map((date, index) => {
             const dayOfWeek = date.getDay();
-            const daySchedule = schedule?.days.find((d: any) => d.dayOfWeek === dayOfWeek);
+            const daySchedule = schedules.find((d: any) => d.dayOfWeek === dayOfWeek);
             const isToday = new Date().toDateString() === date.toDateString();
             
             // Default to 9-5 Mon-Fri if no custom schedule
             const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
             const startTime = daySchedule?.startTime || (isWeekend ? null : "09:00");
             const endTime = daySchedule?.endTime || (isWeekend ? null : "17:00");
+            
+            // Check explicit day off flag, or fallback to weekend default
             const isDayOff = daySchedule ? daySchedule.isDayOff : isWeekend;
+
+            // If we have no schedule record and it's a weekend, it's off.
+            // If we have no schedule record and it's a weekday, it's 9-5 (as per default logic above).
 
             return (
               <div 

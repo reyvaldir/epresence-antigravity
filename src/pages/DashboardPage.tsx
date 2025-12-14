@@ -1,45 +1,46 @@
-import { useNavigate } from 'react-router-dom';
-import { useQuery } from 'convex/react';
-import { api } from '../../convex/_generated/api';
+import { useNavigate, useOutletContext } from 'react-router-dom';
+import { useQuery } from '@apollo/client/react';
+import { GET_ATTENDANCE_HISTORY } from '../graphql/operations';
 import { MapPin, Calendar, Clock, FileText, Users, Settings } from 'lucide-react';
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const { user } = useOutletContext<{ user: any }>();
   
-  // Get actual logged-in user from localStorage
-  const storedUser = localStorage.getItem('user');
-  const user = storedUser ? JSON.parse(storedUser) : null;
+  // Redirect if not logged in (handled by Layout, but double check)
+  if (!user) return null;
   
-  if (!user) {
-    navigate('/login');
-    return null;
-  }
-  
-  const avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=0D8ABC&color=fff`;
+  const avatar = user.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=0D8ABC&color=fff`;
 
-  // Get today's attendance records
-  const attendanceRecords = useQuery(api.admin.getAttendanceReport, {});
+  // Get attendance history for this user
+  const { data: attendanceData } = useQuery<any>(GET_ATTENDANCE_HISTORY, {
+    variables: { userId: user.id },
+    skip: !user.id
+  });
+
+  const attendanceRecords = attendanceData?.attendanceHistory || [];
   
   // Find today's check-in for this user
   const today = new Date().setHours(0, 0, 0, 0);
-  const todayCheckIn = attendanceRecords?.find(record => {
-    const recordDate = new Date(record.timestamp).setHours(0, 0, 0, 0);
-    return record.userId === user._id && recordDate === today && record.type === 'check_in';
+  const todayCheckIn = attendanceRecords.find((record: any) => {
+    // Timestamp comes as string/number from GraphQL
+    const recordDate = new Date(Number(record.timestamp)).setHours(0, 0, 0, 0);
+    return recordDate === today && record.type === 'check_in';
   });
 
-  const todayCheckOut = attendanceRecords?.find(record => {
-    const recordDate = new Date(record.timestamp).setHours(0, 0, 0, 0);
-    return record.userId === user._id && recordDate === today && record.type === 'check_out';
+  const todayCheckOut = attendanceRecords.find((record: any) => {
+    const recordDate = new Date(Number(record.timestamp)).setHours(0, 0, 0, 0);
+    return recordDate === today && record.type === 'check_out';
   });
 
   const checkInTime = todayCheckIn 
-    ? new Date(todayCheckIn.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+    ? new Date(Number(todayCheckIn.timestamp)).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
     : '--:--';
   
   const checkInStatus = todayCheckIn ? 'On Time' : 'Not yet';
 
   const checkOutTime = todayCheckOut 
-    ? new Date(todayCheckOut.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+    ? new Date(Number(todayCheckOut.timestamp)).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
     : '--:--';
   
   const checkOutStatus = todayCheckOut ? 'On Time' : 'Not yet';
@@ -53,8 +54,8 @@ export default function DashboardPage() {
 
   if (user.role === 'admin' || user.role === 'super_admin') {
     menuItems.push(
-      { icon: Users, label: 'Employees', path: '/employees', color: 'text-indigo-500', bg: 'bg-indigo-50' },
-      { icon: Settings, label: 'Settings', path: '/settings', color: 'text-gray-500', bg: 'bg-gray-50' }
+      { icon: Users, label: 'Employees', path: '/admin/employees', color: 'text-indigo-500', bg: 'bg-indigo-50' },
+      { icon: Settings, label: 'Admin Panel', path: '/admin', color: 'text-gray-500', bg: 'bg-gray-50' }
     );
   }
 
@@ -103,8 +104,6 @@ export default function DashboardPage() {
           ))}
         </div>
       </div>
-      
-
     </div>
   );
 }

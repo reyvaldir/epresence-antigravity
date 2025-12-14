@@ -1,17 +1,16 @@
 import { useState, useRef, useEffect } from 'react';
-import { useMutation } from 'convex/react';
-import { api } from '../../convex/_generated/api';
+import { useMutation } from '@apollo/client/react';
+import { useUser } from '@clerk/clerk-react';
+import { UPDATE_PROFILE } from '../graphql/operations';
 import { Camera, User, CheckCircle, Settings } from 'lucide-react';
 import * as faceapi from 'face-api.js';
 
 export default function ProfilePage() {
-  // Mock user ID from localStorage for now (in real app, use AuthContext)
-  const storedUser = localStorage.getItem('user');
-  const user = storedUser ? JSON.parse(storedUser) : null;
-  const userId = user?._id;
-
-  const registerFace = useMutation(api.users.registerFace);
-  // const userData = useQuery(api.users.getUser, userId ? { userId } : "skip");
+  const { user, isLoaded } = useUser();
+  
+  // We don't implement full face reg in frontend anymore as per new architecture
+  // But we keep the UI for now as placeholder or future implementation
+  // const registerFace = useMutation(api.users.registerFace);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -20,36 +19,40 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(false);
   
   // Profile Settings State
-  const [name, setName] = useState(user?.name || '');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const updateProfile = useMutation(api.users.updateProfile);
+  const [name, setName] = useState(user?.fullName || '');
+  const [phone, setPhone] = useState(user?.primaryPhoneNumber?.phoneNumber || '');
+  
+  const [updateProfile] = useMutation(UPDATE_PROFILE);
+
+  // Sync state when user loads
+  useEffect(() => {
+    if (user) {
+      setName(user.fullName || '');
+      setPhone(user.primaryPhoneNumber?.phoneNumber || '');
+    }
+  }, [user]);
 
   const handleUpdateProfile = async () => {
-    if (!userId) return;
+    if (!user) return;
     
-    if (newPassword && newPassword !== confirmPassword) {
-      alert("Passwords do not match!");
-      return;
-    }
-
     setLoading(true);
     try {
+      // Update in our backend
       await updateProfile({
-        userId,
-        name,
-        password: newPassword || undefined,
+        variables: {
+          name,
+          phone,
+          avatarUrl: user.imageUrl
+        }
       });
       
-      // Update local storage to reflect new name immediately
-      const updatedUser = { ...user, name };
-      localStorage.setItem('user', JSON.stringify(updatedUser));
+      // Also try to update Clerk profile
+      await user.update({
+        firstName: name.split(' ')[0],
+        lastName: name.split(' ').slice(1).join(' '),
+      });
       
       alert("Profile updated successfully!");
-      setNewPassword('');
-      setConfirmPassword('');
-      // Update the name state to reflect changes immediately
-      setName(name); 
     } catch (err) {
       console.error("Failed to update profile", err);
       alert("Failed to update profile.");
@@ -100,7 +103,7 @@ export default function ProfilePage() {
   }, [isCameraOpen]);
 
   const handleRegisterFace = async () => {
-    if (!videoRef.current || !userId) return;
+    if (!videoRef.current || !user) return;
     
     setLoading(true);
     const detections = await faceapi.detectAllFaces(videoRef.current, new faceapi.TinyFaceDetectorOptions())
@@ -108,14 +111,15 @@ export default function ProfilePage() {
       .withFaceDescriptors();
 
     if (detections.length > 0) {
-      const descriptor = Array.from(detections[0].descriptor);
+      // const descriptor = Array.from(detections[0].descriptor);
       
       try {
-        await registerFace({ userId, faceEmbedding: descriptor });
+        // await registerFace({ userId, faceEmbedding: descriptor });
         setIsRegistered(true);
         setIsCameraOpen(false);
         const stream = videoRef.current.srcObject as MediaStream;
         stream?.getTracks().forEach(track => track.stop());
+        alert("Face registered successfully (Local Mock)");
       } catch (err) {
         console.error("Failed to register face", err);
         alert("Failed to save face data.");
@@ -126,15 +130,21 @@ export default function ProfilePage() {
     setLoading(false);
   };
 
+  if (!isLoaded) return <div>Loading...</div>;
+
   return (
     <div className="min-h-screen bg-gray-50 pb-20 p-4">
       <div className="max-w-md mx-auto bg-white rounded-2xl shadow-sm p-6">
         <div className="text-center mb-6">
-          <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
-            <User className="w-10 h-10 text-blue-600" />
+          <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3 overflow-hidden">
+            {user?.imageUrl ? (
+              <img src={user.imageUrl} alt="Profile" className="w-full h-full object-cover" />
+            ) : (
+              <User className="w-10 h-10 text-blue-600" />
+            )}
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">{user?.name || 'User Profile'}</h1>
-          <p className="text-gray-500">{user?.email}</p>
+          <h1 className="text-2xl font-bold text-gray-900">{user?.fullName || 'User Profile'}</h1>
+          <p className="text-gray-500">{user?.primaryEmailAddress?.emailAddress}</p>
         </div>
 
         <div className="border-t border-gray-100 pt-6">
@@ -211,30 +221,17 @@ export default function ProfilePage() {
                 placeholder="Your Name"
               />
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">New Password (Optional)</label>
+            
+             <div> // New Phone field for Clerk/Backend sync
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
               <input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
+                type="text"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                placeholder="Leave blank to keep current"
+                placeholder="+1234567890"
               />
             </div>
-
-            {newPassword && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="Confirm new password"
-                />
-              </div>
-            )}
 
             <button
               onClick={handleUpdateProfile}

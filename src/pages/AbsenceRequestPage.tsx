@@ -1,15 +1,20 @@
 import { useState } from 'react';
-import { useMutation, useQuery } from 'convex/react';
-import { api } from '../../convex/_generated/api';
+import { useMutation, useQuery } from '@apollo/client/react';
+import { SUBMIT_ABSENCE_REQUEST, GET_USER_ABSENCE_REQUESTS } from '../graphql/operations';
+import { useOutletContext } from 'react-router-dom';
 import { FileText, Calendar, Send, CheckCircle, Clock, XCircle } from 'lucide-react';
 
 export default function AbsenceRequestPage() {
-  const storedUser = localStorage.getItem('user');
-  const user = storedUser ? JSON.parse(storedUser) : null;
-  const userId = user?._id;
+  const { user } = useOutletContext<{ user: any }>();
+  const userId = user?.id;
 
-  const submitRequest = useMutation(api.absence.submitAbsenceRequest);
-  const userRequests = useQuery(api.absence.getUserAbsenceRequests, userId ? { userId } : "skip");
+  const [submitRequest] = useMutation(SUBMIT_ABSENCE_REQUEST);
+  const { data: requestData, refetch } = useQuery<any>(GET_USER_ABSENCE_REQUESTS, {
+    variables: { userId },
+    skip: !userId
+  });
+  
+  const userRequests = requestData?.userAbsenceRequests || [];
 
   const [type, setType] = useState('sick');
   const [reason, setReason] = useState('');
@@ -24,17 +29,20 @@ export default function AbsenceRequestPage() {
     setLoading(true);
     try {
       await submitRequest({
-        userId,
-        type,
-        reason,
-        startDate: new Date(startDate).getTime(),
-        endDate: new Date(endDate).getTime(),
+        variables: {
+          userId,
+          type,
+          reason,
+          startDate: new Date(startDate).getTime().toString(),
+          endDate: new Date(endDate).getTime().toString(),
+        }
       });
       
       // Reset form
       setReason('');
       setStartDate('');
       setEndDate('');
+      refetch();
       alert('Request submitted successfully!');
     } catch (err) {
       console.error(err);
@@ -143,13 +151,13 @@ export default function AbsenceRequestPage() {
             <p className="text-gray-500 text-center py-8">No requests yet</p>
           ) : (
             <div className="space-y-3">
-              {userRequests.map((request) => (
-                <div key={request._id} className="border border-gray-200 rounded-xl p-4">
+              {userRequests.map((request: any) => (
+                <div key={request.id} className="border border-gray-200 rounded-xl p-4">
                   <div className="flex items-start justify-between mb-2">
                     <div>
                       <h3 className="font-semibold capitalize">{request.type} Leave</h3>
                       <p className="text-sm text-gray-600">
-                        {new Date(request.startDate).toLocaleDateString()} - {new Date(request.endDate).toLocaleDateString()}
+                        {new Date(Number(request.startDate)).toLocaleDateString()} - {new Date(Number(request.endDate)).toLocaleDateString()}
                       </p>
                     </div>
                     <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${getStatusColor(request.status)}`}>

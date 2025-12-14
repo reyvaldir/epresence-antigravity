@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id            String    @id @default(uuid())
+  name          String
+  email         String    @unique
+  role          String    // "employee", "admin", "super_admin"
+  avatarUrl     String?
+  phone         String?
+  passwordHash  String?
+  faceEmbedding String?   // Stored as JSON string
+  isApproved    Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  attendanceRecords AttendanceRecord[]
+  absenceRequests   AbsenceRequest[]
+  approvedAbsences  AbsenceRequest[] @relation("ApprovedBy")
+  deviceFingerprints DeviceFingerprint[]
+  workSchedules     WorkSchedule[]
+  scheduleOverrides ScheduleOverride[]
+}
+
+model AttendanceRecord {
+  id                  String   @id @default(uuid())
+  userId              String
+  user                User     @relation(fields: [userId], references: [id])
+  type                String   // "check_in", "check_out"
+  latitude            Float
+  longitude           Float
+  address             String?
+  selfieUrl           String
+  deviceFingerprintId String?
+  isSuspicious        Boolean  @default(false)
+  timestamp           BigInt
+  status              String?  // "on_time", "late", "early_leave"
+}
+
+model OfficeLocation {
+  id        String @id @default(uuid())
+  name      String
+  latitude  Float
+  longitude Float
+  radius    Float
+}
+
+model AbsenceRequest {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  type        String
+  reason      String
+  status      String   // "pending", "approved", "rejected"
+  documentUrl String?
+  startDate   BigInt
+  endDate     BigInt
+  approvedById String?
+  approvedBy   User?    @relation("ApprovedBy", fields: [approvedById], references: [id])
+}
+
+model DeviceFingerprint {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  deviceId    String
+  browserInfo String?
+  osInfo      String?
+  ipAddress   String
+  isApproved  Boolean  @default(false)
+  lastSeen    BigInt
+}
+
+model WorkSchedule {
+  id        String  @id @default(uuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id])
+  dayOfWeek Int
+  startTime String
+  endTime   String
+  isDayOff  Boolean
+}
+
+model ScheduleOverride {
+  id        String  @id @default(uuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id])
+  date      String
+  startTime String?
+  endTime   String?
+  isDayOff  Boolean
+  reason    String?
+}

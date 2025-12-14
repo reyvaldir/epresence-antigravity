@@ -1,26 +1,29 @@
-import { useQuery } from 'convex/react';
-import { api } from '../../convex/_generated/api';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { FileText, Users, Clock, AlertTriangle, Download } from 'lucide-react';
+import { useState } from 'react';
+import { useQuery } from '@apollo/client/react';
+import { FileText, Download, Users, Clock, AlertTriangle } from 'lucide-react';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend, BarChart, CartesianGrid, XAxis, YAxis, Bar } from 'recharts';
+import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import * as XLSX from 'xlsx';
-import { useState } from 'react';
+import { GET_ATTENDANCE_HISTORY, GET_ALL_USERS } from '../graphql/operations';
 
 export default function AdminReportsPage() {
-  const records = useQuery(api.admin.getAttendanceReport, {});
-  const users = useQuery(api.admin.getAllUsers);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  
+  const { data: attendanceData } = useQuery<any>(GET_ATTENDANCE_HISTORY);
+  const { data: userData } = useQuery<any>(GET_ALL_USERS);
 
-  if (!records || !users) {
-    return <div className="p-8 text-center">Loading reports...</div>;
-  }
+  const records = attendanceData?.attendanceHistory || [];
+  const allUsers = userData?.users || [];
+
+  // Helper to get user info
+  const getUser = (userId: string) => allUsers.find((u: any) => u.id === userId);
 
   // Process data for charts
-  const checkIns = records.filter(r => r.type === 'check_in');
+  const checkIns = records.filter((r: any) => r.type === 'check_in');
   
   // Status Distribution (Pie Chart)
-  const statusCounts = checkIns.reduce((acc: any, curr) => {
+  const statusCounts = checkIns.reduce((acc: any, curr: any) => {
     const status = curr.status || 'on_time';
     acc[status] = (acc[status] || 0) + 1;
     return acc;
@@ -33,8 +36,8 @@ export default function AdminReportsPage() {
   ].filter(d => d.value > 0);
 
   // Daily Attendance (Bar Chart)
-  const dailyCounts = checkIns.reduce((acc: any, curr) => {
-    const date = new Date(curr.timestamp).toLocaleDateString('en-US', { weekday: 'short' });
+  const dailyCounts = checkIns.reduce((acc: any, curr: any) => {
+    const date = new Date(Number(curr.timestamp)).toLocaleDateString('en-US', { weekday: 'short' });
     acc[date] = (acc[date] || 0) + 1;
     return acc;
   }, {});
@@ -45,24 +48,28 @@ export default function AdminReportsPage() {
   }));
 
   // Late Comers List
-  const lateRecords = checkIns.filter(r => r.status === 'late').sort((a, b) => b.timestamp - a.timestamp);
+  const lateRecords = checkIns.filter((r: any) => r.status === 'late').sort((a: any, b: any) => Number(b.timestamp) - Number(a.timestamp));
 
   // Export Functions
   const getExportData = () => {
-    return checkIns.map(r => ({
-      Date: new Date(r.timestamp).toLocaleDateString(),
-      Time: new Date(r.timestamp).toLocaleTimeString(),
-      Employee: r.userName || 'Unknown',
-      Email: r.userEmail || 'Unknown',
-      Status: r.status || 'on_time',
-      Location: `${r.latitude.toFixed(4)}, ${r.longitude.toFixed(4)}`
-    }));
+    return checkIns.map((r: any) => {
+      const user = r.user || getUser(r.userId);
+      return {
+        Date: new Date(Number(r.timestamp)).toLocaleDateString(),
+        Time: new Date(Number(r.timestamp)).toLocaleTimeString(),
+        Employee: user?.name || 'Unknown',
+        Email: user?.email || 'Unknown',
+        Status: r.status || 'on_time',
+        Location: `${r.latitude.toFixed(4)}, ${r.longitude.toFixed(4)}`
+      };
+    });
   };
 
   const exportToCSV = () => {
     const data = getExportData();
+    if (data.length === 0) return alert("No data to export");
     const headers = Object.keys(data[0]).join(',');
-    const rows = data.map(row => Object.values(row).join(','));
+    const rows = data.map((row: any) => Object.values(row).join(','));
     const csvContent = `data:text/csv;charset=utf-8,${headers}\n${rows.join('\n')}`;
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
@@ -75,6 +82,7 @@ export default function AdminReportsPage() {
 
   const exportToExcel = () => {
     const data = getExportData();
+    if (data.length === 0) return alert("No data to export");
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Attendance");
@@ -85,13 +93,14 @@ export default function AdminReportsPage() {
   const exportToPDF = () => {
     const doc = new jsPDF();
     const data = getExportData();
+    if (data.length === 0) return alert("No data to export");
     
     doc.text("Attendance Report", 14, 15);
     doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 22);
 
     autoTable(doc, {
       head: [['Date', 'Time', 'Employee', 'Status']],
-      body: data.map(r => [r.Date, r.Time, r.Employee, r.Status]),
+      body: data.map((r: any) => [r.Date, r.Time, r.Employee, r.Status]),
       startY: 30,
     });
 
@@ -158,7 +167,7 @@ export default function AdminReportsPage() {
             </div>
             <p className="text-3xl font-bold">{statusCounts['late'] || 0}</p>
             <p className="text-xs text-red-500 mt-1">
-              {((statusCounts['late'] || 0) / checkIns.length * 100).toFixed(1)}% of total
+              {checkIns.length > 0 ? ((statusCounts['late'] || 0) / checkIns.length * 100).toFixed(1) : 0}% of total
             </p>
           </div>
 
@@ -229,27 +238,31 @@ export default function AdminReportsPage() {
             </h3>
           </div>
           <div className="divide-y divide-gray-100">
+            {console.log('Late Records:', lateRecords)}
             {lateRecords.length === 0 ? (
-              <p className="p-6 text-center text-gray-500">No late arrivals recorded 🎉</p>
+              <p className="p-6 text-center text-gray-500">No late arrivals recorded completely 🎉</p>
             ) : (
-              lateRecords.map((record) => (
-                <div key={record._id} className="p-4 flex items-center justify-between hover:bg-gray-50">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center text-red-600 font-bold">
-                      {record.userName?.charAt(0)}
+              lateRecords.map((record: any) => {
+                const user = record.user || getUser(record.userId);
+                return (
+                  <div key={record.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center text-red-600 font-bold">
+                        {user?.name?.charAt(0) || '?'}
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-900">{user?.name || 'Unknown'}</p>
+                        <p className="text-sm text-gray-500">{new Date(Number(record.timestamp)).toLocaleDateString()}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-medium text-gray-900">{record.userName}</p>
-                      <p className="text-sm text-gray-500">{new Date(record.timestamp).toLocaleDateString()}</p>
+                    <div className="text-right">
+                      <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium">
+                        {new Date(Number(record.timestamp)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                      {new Date(record.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

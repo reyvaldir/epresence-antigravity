@@ -1,16 +1,17 @@
 import { useState } from 'react';
-import { useMutation, useQuery } from 'convex/react';
-import { api } from '../../convex/_generated/api';
-import { UserCheck, UserX, Clock, Mail, User as UserIcon } from 'lucide-react';
+import { useQuery, useMutation } from '@apollo/client/react';
+import { Clock, UserCheck, User as UserIcon, Mail, UserX } from 'lucide-react';
+import { GET_ALL_USERS, APPROVE_USER, UPDATE_USER_ROLE, DELETE_USER } from '../graphql/operations';
 
 export default function AdminPendingUsersPage() {
-  const pendingUsers = useQuery(api.admin.getPendingUsers);
-  const approveUser = useMutation(api.admin.approveUser);
-  const updateUserRole = useMutation(api.admin.updateUserRole);
-  const deleteUser = useMutation(api.admin.deleteUser);
+  const { data: userData, refetch } = useQuery<any>(GET_ALL_USERS);
+  const [approveUser] = useMutation(APPROVE_USER);
+  const [deleteUser] = useMutation(DELETE_USER); // Used for rejection if we want to delete
+  const [updateUserRole] = useMutation(UPDATE_USER_ROLE);
 
-  // Track role changes for each user
   const [userRoles, setUserRoles] = useState<Record<string, string>>({});
+
+  const pendingUsers = userData?.users?.filter((u: any) => !u.isApproved) || [];
 
   const handleRoleChange = (userId: string, newRole: string) => {
     setUserRoles(prev => ({ ...prev, [userId]: newRole }));
@@ -21,12 +22,13 @@ export default function AdminPendingUsersPage() {
       // Update role if it was changed
       const newRole = userRoles[userId];
       if (newRole) {
-        await updateUserRole({ userId: userId as any, role: newRole as any });
+        await updateUserRole({ variables: { userId, role: newRole } });
       }
       
       // Approve the user
-      await approveUser({ userId: userId as any });
+      await approveUser({ variables: { userId } });
       alert(`${name} has been approved!`);
+      refetch();
     } catch (err) {
       console.error(err);
       alert('Failed to approve user');
@@ -36,8 +38,11 @@ export default function AdminPendingUsersPage() {
   const handleReject = async (userId: string, name: string) => {
     if (!confirm(`Reject and delete registration for ${name}?`)) return;
     try {
-      await deleteUser({ userId: userId as any });
+      // For rejection, we might want to delete the user or mark as rejected.
+      // The previous code called deleteUser.
+      await deleteUser({ variables: { userId } });
       alert('User registration rejected');
+      refetch();
     } catch (err) {
       console.error(err);
       alert('Failed to reject user');
@@ -61,8 +66,8 @@ export default function AdminPendingUsersPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {pendingUsers.map((user) => (
-                <div key={user._id} className="border border-orange-200 bg-orange-50 rounded-xl p-6 hover:shadow-md transition-shadow">
+              {pendingUsers.map((user: any) => (
+                <div key={user.id} className="border border-orange-200 bg-orange-50 rounded-xl p-6 hover:shadow-md transition-shadow">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
@@ -86,8 +91,8 @@ export default function AdminPendingUsersPage() {
                       Assign Role
                     </label>
                     <select
-                      value={userRoles[user._id] || user.role}
-                      onChange={(e) => handleRoleChange(user._id, e.target.value)}
+                      value={userRoles[user.id] || user.role}
+                      onChange={(e) => handleRoleChange(user.id, e.target.value)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none bg-white"
                     >
                       <option value="employee">Employee</option>
@@ -101,14 +106,14 @@ export default function AdminPendingUsersPage() {
 
                   <div className="flex gap-3">
                     <button
-                      onClick={() => handleApprove(user._id, user.name)}
+                      onClick={() => handleApprove(user.id, user.name)}
                       className="flex-1 bg-green-600 text-white py-2 rounded-lg font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
                     >
                       <UserCheck className="w-5 h-5" />
-                      Approve{userRoles[user._id] && ` as ${userRoles[user._id].replace('_', ' ')}`}
+                      Approve{userRoles[user.id] && ` as ${userRoles[user.id].replace('_', ' ')}`}
                     </button>
                     <button
-                      onClick={() => handleReject(user._id, user.name)}
+                      onClick={() => handleReject(user.id, user.name)}
                       className="flex-1 bg-red-600 text-white py-2 rounded-lg font-bold hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
                     >
                       <UserX className="w-5 h-5" />

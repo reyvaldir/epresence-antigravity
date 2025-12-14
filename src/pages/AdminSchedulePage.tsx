@@ -1,31 +1,58 @@
 import { useState } from 'react';
-import { useQuery, useMutation } from 'convex/react';
-import { api } from '../../convex/_generated/api';
-import { Calendar, Clock, Save, X } from 'lucide-react';
-import type { Id } from '../../convex/_generated/dataModel';
+import { useQuery, useMutation } from '@apollo/client/react';
+import { Calendar, Clock, X, Save } from 'lucide-react';
+import { GET_ALL_USERS, GET_ALL_WORK_SCHEDULES, UPDATE_WORK_SCHEDULE } from '../graphql/operations';
 
-type DaySchedule = {
+// Helper for default days
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+interface DaySchedule {
   dayOfWeek: number;
   startTime: string;
   endTime: string;
   isDayOff: boolean;
-};
-
-const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+}
 
 export default function AdminSchedulePage() {
-  const users = useQuery(api.admin.getAllUsers);
-  const schedules = useQuery((api as any).schedules.getAllSchedules);
-  const updateSchedule = useMutation((api as any).schedules.updateSchedule);
+  const { data: userData } = useQuery<any>(GET_ALL_USERS);
+  const { data: scheduleData, refetch } = useQuery<any>(GET_ALL_WORK_SCHEDULES);
+  
+  const [updateSchedule] = useMutation(UPDATE_WORK_SCHEDULE);
 
-  const [selectedUser, setSelectedUser] = useState<{ id: Id<"users">, name: string } | null>(null);
+  const [selectedUser, setSelectedUser] = useState<{ id: string; name: string } | null>(null);
   const [editingSchedule, setEditingSchedule] = useState<DaySchedule[]>([]);
 
-  const handleEditClick = (userId: Id<"users">, name: string) => {
-    const userSchedule = schedules?.find((s: any) => s.userId === userId);
+  const users = userData?.users || [];
+  const schedules = scheduleData?.allWorkSchedules || [];
+
+  const handleEditClick = (userId: string, name: string) => {
+    // Filter schedule for this user
+    const userSchedules = schedules.filter((s: any) => s.userId === userId);
     
-    if (userSchedule) {
-      setEditingSchedule(userSchedule.days);
+    if (userSchedules.length > 0) {
+      // Map to local format if needed or use directly
+      // Current structure matches DaySchedule interface mostly
+      // We need to ensure we have all 7 days for the UI
+      const days: DaySchedule[] = [];
+      for (let i = 0; i < 7; i++) {
+        const found = userSchedules.find((s: any) => s.dayOfWeek === i);
+        if (found) {
+          days.push({
+            dayOfWeek: found.dayOfWeek,
+            startTime: found.startTime,
+            endTime: found.endTime,
+            isDayOff: found.isDayOff
+          });
+        } else {
+             days.push({
+            dayOfWeek: i,
+            startTime: '09:00',
+            endTime: '17:00',
+            isDayOff: true // Missing days treated as off? Or default? Let's say off to be safe or default.
+          });
+        }
+      }
+      setEditingSchedule(days);
     } else {
       // Default schedule: Mon-Fri 9-5
       const defaultSchedule = DAYS.map((_, index) => ({
@@ -50,12 +77,23 @@ export default function AdminSchedulePage() {
     if (!selectedUser) return;
     
     try {
+      // Prepare input for mutation
+      const daysInput = editingSchedule.map(day => ({
+        dayOfWeek: day.dayOfWeek,
+        startTime: day.startTime,
+        endTime: day.endTime,
+        isDayOff: day.isDayOff
+      }));
+
       await updateSchedule({
-        userId: selectedUser.id,
-        days: editingSchedule,
+        variables: {
+          userId: selectedUser.id,
+          days: daysInput
+        }
       });
       alert('Schedule updated successfully!');
       setSelectedUser(null);
+      refetch(); // Refresh list to show "Custom Schedule" status maybe?
     } catch (err) {
       console.error(err);
       alert('Failed to update schedule');
@@ -85,16 +123,18 @@ export default function AdminSchedulePage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {users?.map((user) => {
-            const hasSchedule = schedules?.some((s: any) => s.userId === user._id);
+          {users.map((user: any) => {
+            const hasSchedule = schedules.some((s: any) => s.userId === user.id);
+            // Note: `schedules` is flat list of all schedule days for all users.
+            
             return (
-              <div key={user._id} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+              <div key={user.id} className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow">
                 <div className="flex items-center gap-4 mb-4">
                   <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold text-xl">
-                    {user.name.charAt(0)}
+                    {user.name ? user.name.charAt(0) : '?'}
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">{user.name}</h3>
+                    <h3 className="font-bold text-gray-900">{user.name || 'Unknown'}</h3>
                     <p className="text-sm text-gray-500 capitalize">{user.role}</p>
                   </div>
                 </div>
@@ -104,7 +144,7 @@ export default function AdminSchedulePage() {
                     {hasSchedule ? 'Custom Schedule' : 'Default Schedule'}
                   </span>
                   <button
-                    onClick={() => handleEditClick(user._id, user.name)}
+                    onClick={() => handleEditClick(user.id, user.name)}
                     className="text-indigo-600 text-sm font-medium hover:underline"
                   >
                     Edit Schedule

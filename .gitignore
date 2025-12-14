@@ -27,3 +27,8 @@ dist-ssr
 convex/_generated/
 .env.local
 .env
+
+# Database
+*.db
+*.sqlite
+*.sqlite3

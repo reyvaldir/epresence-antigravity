@@ -1,23 +1,26 @@
-import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
-import { api } from '../../convex/_generated/api';
+import { useQuery, useMutation } from '@apollo/client/react';
+import { useUser } from '@clerk/clerk-react';
 import { Users, Trash2, AlertTriangle, X } from 'lucide-react';
+import { GET_ALL_USERS, UPDATE_USER_ROLE, DELETE_USER } from '../graphql/operations';
 
 export default function AdminEmployeesPage() {
-  const allUsers = useQuery(api.admin.getAllUsers);
-  const updateRole = useMutation(api.admin.updateUserRole);
-  const deleteUser = useMutation(api.admin.deleteUser);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [deleteConfirmation, setDeleteConfirmation] = useState<{ isOpen: boolean; userId: string; userName: string } | null>(null);
+  const { user: currentUser } = useUser();
+  const { data: userData, refetch } = useQuery<any>(GET_ALL_USERS);
+  
+  const [updateRole] = useMutation(UPDATE_USER_ROLE);
+  const [deleteUser] = useMutation(DELETE_USER);
 
-  // Get current user to prevent self-deletion
-  const storedUser = localStorage.getItem('user');
-  const currentUser = storedUser ? JSON.parse(storedUser) : null;
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{ isOpen: boolean; userId: string; userName: string } | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const allUsers = userData?.users || [];
 
   const handleRoleChange = async (userId: string, newRole: string) => {
     try {
-      await updateRole({ userId: userId as any, role: newRole as any });
+      await updateRole({ variables: { userId, role: newRole } });
       alert('Role updated successfully!');
+      refetch();
     } catch (err) {
       console.error(err);
       alert('Failed to update role');
@@ -36,8 +39,9 @@ export default function AdminEmployeesPage() {
     setDeleteConfirmation(null); // Close modal immediately
 
     try {
-      await deleteUser({ userId: userId as any });
-      // Success - list updates automatically
+      await deleteUser({ variables: { userId } });
+      alert('User deleted successfully');
+      refetch();
     } catch (err: any) {
       console.error('Delete failed:', err);
       alert(`Failed to delete user: ${err.message || 'Unknown error'}`);
@@ -69,14 +73,14 @@ export default function AdminEmployeesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {allUsers.map((user) => (
-                    <tr key={user._id} className="border-b border-gray-100 hover:bg-gray-50">
+                  {allUsers.map((user: any) => (
+                    <tr key={user.id} className="border-b border-gray-100 hover:bg-gray-50">
                       <td className="py-3 px-4 font-medium">{user.name}</td>
                       <td className="py-3 px-4 text-gray-600">{user.email}</td>
                       <td className="py-3 px-4">
                         <select
                           value={user.role}
-                          onChange={(e) => handleRoleChange(user._id, e.target.value)}
+                          onChange={(e) => handleRoleChange(user.id, e.target.value)}
                           className="px-3 py-1 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                         >
                           <option value="employee">Employee</option>
@@ -86,16 +90,16 @@ export default function AdminEmployeesPage() {
                       </td>
                         <td className="py-3 px-4">
                           <button
-                            onClick={() => confirmDelete(user._id, user.name)}
-                            disabled={currentUser?._id === user._id || deletingId === user._id}
+                            onClick={() => confirmDelete(user.id, user.name)}
+                            disabled={currentUser?.id === user.id || deletingId === user.id}
                             className={`p-2 rounded-lg transition-colors ${
-                              currentUser?._id === user._id 
+                              currentUser?.id === user.id 
                                 ? 'text-gray-300 cursor-not-allowed' 
                                 : 'text-red-600 hover:text-red-700 hover:bg-red-50'
                             }`}
-                            title={currentUser?._id === user._id ? "Cannot delete yourself" : "Delete user"}
+                            title={currentUser?.id === user.id ? "Cannot delete yourself" : "Delete user"}
                           >
-                            {deletingId === user._id ? (
+                            {deletingId === user.id ? (
                               <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
                             ) : (
                               <Trash2 className="w-4 h-4" />
